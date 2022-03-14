@@ -1,37 +1,56 @@
+import Balances.BtcState
+
 object Balances {
 
-  trait Exchanger[-From, To] {
-    def exchange(source: From): Double => To
+  trait Exchangable {
+    def exchangeTo[To <: CurrencyState](targetFactory: CurrencyFactory[To])(rate: Double): To
+
+    val percentProvision: Double
   }
 
-  sealed trait CurrencyState {
+
+  sealed trait CurrencyState extends Exchangable {
     val amount: Double
 
-    def to[To](exchanger: Exchanger[this.type, To]): Double => To
-  }
+    def exchangeTo[To <: CurrencyState](targetFactory: CurrencyFactory[To])(rate: Double): To = {
 
-  final case class BtcState(amount: Double) extends CurrencyState {
-    def to[To](exchanger: Exchanger[BtcState.this.type, To]): Double => To = exchanger.exchange(this)
-  }
+/*      this match {
+        case sameCurrency: To => sameCurrency
+        case _ => {*/
+          val fee = this.amount * this.percentProvision
 
-  object BtcToUsd extends Exchanger[BtcState, UsdState] {
-    def exchange(source: BtcState): Double => UsdState = rate => {
-      def fee = source.amount * 0.001
+          targetFactory.create((this.amount - fee) * rate)
+/*        }
+      }*/
 
-      UsdState((source.amount - fee) * rate)
-    }
-  }
-
-  object UsdToBtc extends Exchanger[UsdState, BtcState] {
-    def exchange(source: UsdState): Double => BtcState = rate => {
-      def fee = source.amount * 0.001
-
-      BtcState((source.amount - fee) * rate)
     }
   }
 
   final case class UsdState(amount: Double) extends CurrencyState {
-    def to[To](exchanger: Exchanger[UsdState.this.type, To]): Double => To = exchanger.exchange(this)
+    val percentProvision: Double = UsdState.percentProvision
   }
 
+  final case class BtcState(amount: Double) extends CurrencyState {
+    val percentProvision: Double = BtcState.percentProvision
+  }
+
+  trait Factory[A, B] {
+    def create: A => B
+  }
+
+  sealed trait CurrencyFactory[B <: CurrencyState] extends Factory[Double, B] {
+    def create: Double => B
+  }
+
+  final object BtcState extends CurrencyFactory[BtcState] {
+    def create: Double => BtcState = amount => this (amount)
+
+    final val percentProvision = 0.001
+  }
+
+  final object UsdState extends CurrencyFactory[UsdState] {
+    def create: Double => UsdState = amount => this (amount)
+
+    final val percentProvision = 0.001
+  }
 }

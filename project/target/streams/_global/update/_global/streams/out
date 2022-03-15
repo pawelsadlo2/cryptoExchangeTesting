@@ -1,5 +1,3 @@
 [debug] not up to date. inChanged = true, force = false
-[debug] Updating ProjectRef(uri("file:/C:/Users/pawel/Desktop/SCALA/cryptoExchangeTesting/project/"), "cryptoexchangetesting-build")...
-[warn] Unrecognized repository Scala Plugin Bundled Repository, ignoring it
-[warn] Unrecognized repository Scala Plugin Bundled Repository, ignoring it
-[debug] Done updating ProjectRef(uri("file:/C:/Users/pawel/Desktop/SCALA/cryptoExchangeTesting/project/"), "cryptoexchangetesting-build")
+[debug] Updating ProjectRef(uri("file:/C:/Users/pawel.sadlo/Desktop/PROJECTS/cryptoExchangeTesting/project/"), "cryptoexchangetesting-build")...
+[debug] Done updating ProjectRef(uri("file:/C:/Users/pawel.sadlo/Desktop/PROJECTS/cryptoExchangeTesting/project/"), "cryptoexchangetesting-build")

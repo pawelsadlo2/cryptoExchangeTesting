@@ -8,11 +8,16 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, LocalDateTime, ZoneId}
 import scala.+:
 import scala.annotation.tailrec
+import scala.collection.GenSeq
+import scala.collection.immutable.{Seq, SeqOps}
+import scala.collection.parallel.CollectionConverters._
+import scala.collection.parallel.ParSeq
 import scala.io.Source
 import scala.reflect.ClassTag
 import scala.util.Try
 
 object Main extends App {
+
   def timeToStr(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
 
@@ -66,8 +71,8 @@ object Main extends App {
     } yield usdCount).get
   }
 
-  def isProfitable(lastValue: Double, possibleValue: Double) = {
-    possibleValue > lastValue
+  def isProfitable(lastValue: Double, possibleValue: Double)(implicit minProfitPercent:Double) = {
+    possibleValue > lastValue + lastValue * minProfitPercent
   }
 
   /*  def exchangeIfProfitable(lastState: CurrencyState, currentState: CurrencyState, rate: Double) = {
@@ -111,7 +116,7 @@ object Main extends App {
         cantExchange :+ cantExchange.last
     }*/
 
-  def doSimulationRec(btcRates: Seq[Double], input: CurrencyState): Seq[CurrencyState] = {
+  def doSimulationRec(btcRates: Seq[Double], input: CurrencyState)(implicit minProfitPercent:Double): Seq[CurrencyState] = {
 
     @tailrec
     def doSimulationAccu(btcRates: Seq[Double],
@@ -123,9 +128,7 @@ object Main extends App {
           val newSlopesHistory = slopesHistory match {
             case previousHistory :+ lastSlope => previousHistory ++ lastSlope.extendWithinSeq(btcRates.head)
           }
-
           doSimulationAccu(btcRates.tail, newSlopesHistory, stateHistory :+ strategicExchangeOption(newSlopesHistory, stateHistory).getOrElse(stateHistory.last))
-
         }
       }
     }
@@ -140,7 +143,7 @@ object Main extends App {
   }
 
   def strategicExchangeOption(slopesHistory: Seq[Slope],
-                              stateHistory: Seq[CurrencyState]): Option[CurrencyState] = {
+                              stateHistory: Seq[CurrencyState])(implicit minProfitPercent:Double): Option[CurrencyState] = {
     val rate = slopesHistory.last.end
     val previousStateHistory :+ lastState = stateHistory
 
@@ -149,18 +152,23 @@ object Main extends App {
       case usd: UsdState => (usd.exchangeTo(BtcState)(1 / rate), usd)
     }
 
-    def lastStateOfType[T <: CurrencyState : ClassTag] = previousStateHistory.find {
-      case _: T => true
-      case _ => false
-    }.get
+    if (slopesChangedFromTo[FallingSlope, RaisingSlope](slopesHistory) &&
+      usdAvaliable(lastState) &&
+      isProfitable(lastCurrencyOfType[BtcState](previousStateHistory).get.amount, possibleBtc.amount))
 
-    if (slopesChangedFromTo[FallingSlope, RaisingSlope](slopesHistory) && usdAvaliable(lastState) && isProfitable(possibleBtc.amount, lastStateOfType[BtcState].amount)) Some(possibleBtc)
-    else if (slopesChangedFromTo[RaisingSlope, FallingSlope](slopesHistory) && btcAvaliable(lastState) && isProfitable(possibleUsd.amount, lastStateOfType[UsdState].amount)) Some(possibleUsd)
-    else None
+      Some(possibleBtc)
+    else if (slopesChangedFromTo[RaisingSlope, FallingSlope](slopesHistory) &&
+      btcAvaliable(lastState) &&
+      isProfitable(lastCurrencyOfType[UsdState](previousStateHistory).get.amount, possibleUsd.amount))
+
+      Some(possibleUsd)
+    else
+      None
   }
 
   def usdAvaliable(state: CurrencyState): Boolean = state match {
     case UsdState(x) if x > 0 => true
+    case _ => false
   }
 
   def btcAvaliable(state: CurrencyState): Boolean = state match {
@@ -175,6 +183,12 @@ object Main extends App {
     case _ => false
   }
 
+  def lastOfType[U, T <: U : ClassTag](history: Seq[U]) = history.findLast {
+    case _: T => true
+    case _ => false
+  }
+
+  def lastCurrencyOfType[T <: CurrencyState : ClassTag](history: Seq[CurrencyState]) = lastOfType[CurrencyState, T](history)
 
   val x = 1
   //val realisticCaseAccountHistory1 = doSimulation(slopes, inputUSD)
@@ -186,9 +200,24 @@ object Main extends App {
   val percentSlope = slopes.map(_.percentage)
   //val last100Realistic = realisticCaseAccountHistory1.takeRight(100)
 
-  val realisticCaseAccountHistory2 = doSimulationRec(prices.values.toSeq, UsdState(inputUSD))
+  val realisticCaseAccountHistory2 = doSimulationRec(prices.values.toSeq, UsdState(inputUSD))(0)
   val last100Realistic2 = realisticCaseAccountHistory2.takeRight(100)
+
+
+  def minProfitsToCheck = (1 to 100).map(_.toDouble/1000).par
+  def calculate(profit:Double)={
+    def result = doSimulationRec(prices.values.toSeq, UsdState(inputUSD))(profit)
+    lastCurrencyOfType[UsdState](result)
+  }
+
+  minProfitsToCheck.map(calculate)
+  val comparison = for {
+    minProfit<-minProfitsToCheck
+  } yield calculate(minProfit)
+
+
   //println(prices.values)
-  println("")
+  //prices.values.toSeq.
+    println("")
 
 }

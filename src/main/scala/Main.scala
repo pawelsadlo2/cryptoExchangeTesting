@@ -71,7 +71,7 @@ object Main extends App {
     } yield usdCount).get
   }
 
-  def isProfitable(lastValue: Double, possibleValue: Double)(implicit minProfitPercent:Double) = {
+  def isProfitable(lastValue: Double, possibleValue: Double)(implicit minProfitPercent: Double) = {
     possibleValue > lastValue + lastValue * minProfitPercent
   }
 
@@ -116,7 +116,7 @@ object Main extends App {
         cantExchange :+ cantExchange.last
     }*/
 
-  def doSimulationRec(btcRates: Seq[Double], input: CurrencyState)(implicit minProfitPercent:Double): Seq[CurrencyState] = {
+  def doSimulationRec(btcRates: Seq[Double], input: CurrencyState)(implicit minProfitPercent: Double): Seq[CurrencyState] = {
 
     @tailrec
     def doSimulationAccu(btcRates: Seq[Double],
@@ -143,7 +143,7 @@ object Main extends App {
   }
 
   def strategicExchangeOption(slopesHistory: Seq[Slope],
-                              stateHistory: Seq[CurrencyState])(implicit minProfitPercent:Double): Option[CurrencyState] = {
+                              stateHistory: Seq[CurrencyState])(implicit minProfitPercent: Double): Option[CurrencyState] = {
     val rate = slopesHistory.last.end
     val previousStateHistory :+ lastState = stateHistory
 
@@ -152,18 +152,27 @@ object Main extends App {
       case usd: UsdState => (usd.exchangeTo(BtcState)(1 / rate), usd)
     }
 
-    if (slopesChangedFromTo[FallingSlope, RaisingSlope](slopesHistory) &&
-      usdAvaliable(lastState) &&
-      isProfitable(lastCurrencyOfType[BtcState](previousStateHistory).get.amount, possibleBtc.amount))
+    def FallingToRaising = slopesChangedFromTo[FallingSlope, RaisingSlope](_)
 
-      Some(possibleBtc)
-    else if (slopesChangedFromTo[RaisingSlope, FallingSlope](slopesHistory) &&
-      btcAvaliable(lastState) &&
-      isProfitable(lastCurrencyOfType[UsdState](previousStateHistory).get.amount, possibleUsd.amount))
+    def RaisingToFalling = FallingToRaising.andThen(!_)
 
-      Some(possibleUsd)
-    else
-      None
+    def lastAmount[T <: CurrencyState : ClassTag] = lastCurrencyOfType[T](previousStateHistory).get.amount
+
+    (slopesHistory, lastState) match {
+      case (history, state) if FallingToRaising(history) && usdAvaliable(state) && isProfitable(lastAmount[BtcState], possibleBtc.amount) => {
+        Some(possibleBtc)
+      }
+      case (history, state) if RaisingToFalling(history) && btcAvaliable(state) && isProfitable(lastAmount[UsdState], possibleUsd.amount) => {
+        Some(possibleUsd)
+      }
+      case _ => None
+    }
+    /*    if (FallingToRaising && usdAvaliable(lastState) && isProfitable(lastAmount[BtcState], possibleBtc.amount))
+          Some(possibleBtc)
+        else if (RaisingToFalling && btcAvaliable(lastState) && isProfitable(lastAmount[UsdState], possibleUsd.amount))
+          Some(possibleUsd)
+        else
+          None*/
   }
 
   def usdAvaliable(state: CurrencyState): Boolean = state match {
@@ -204,20 +213,48 @@ object Main extends App {
   val last100Realistic2 = realisticCaseAccountHistory2.takeRight(100)
 
 
-  def minProfitsToCheck = (1 to 100).map(_.toDouble/1000).par
-  def calculate(profit:Double)={
+  def minProfitsToCheck = (1 to 100).map(_.toDouble / 1000).par
+
+  def calculate(profit: Double) = {
     def result = doSimulationRec(prices.values.toSeq, UsdState(inputUSD))(profit)
+
     lastCurrencyOfType[UsdState](result)
   }
 
-  minProfitsToCheck.map(calculate)
-  val comparison = for {
-    minProfit<-minProfitsToCheck
-  } yield calculate(minProfit)
+  def hours(days: Int) = days * 24
+
+  val ratioOfSlopeEnds = 1.03
+
+  val (Seq(slopesHead), slopesTail) = slopes.splitAt(1)
+  val pairsOfSlopes = slopesTail.foldLeft(slopesHead) {
+    case (last@RaisingSlope(rMin, _, rMax), next@FallingSlope(fMax, _, fMin))
+      if rMax / rMin >= ratioOfSlopeEnds && fMax / fMin >= ratioOfSlopeEnds => {
+
+    }
+    case _ =>
+  }
+
+
+
+  /*val pairsOfSlopes = slopes.par.groupBy(
+    slope=>BigDecimal(slope.end/slope.start).setScale(2,BigDecimal.RoundingMode.HALF_UP)
+  ).map(
+    x=>(x._1,x._2.size)
+  ).toList.filter(_._1>1).sortBy(_._1)/*.scanRight((BigDecimal(0),0)){
+    case ((percentage,count),(_,countZ))=>(percentage,count+countZ)}*/*/
+
+  println("")
+  for {
+    periods <- hours(10) to hours(30) by hours(1)
+
+  } yield periods
+
+  val result = minProfitsToCheck.map(calculate)
+
 
 
   //println(prices.values)
   //prices.values.toSeq.
-    println("")
+  println("")
 
 }
